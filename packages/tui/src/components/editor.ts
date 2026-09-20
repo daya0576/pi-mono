@@ -1254,6 +1254,29 @@ export class Editor implements Component, Focusable {
 		}
 	}
 
+	/**
+	 * Re-evaluate the autocomplete trigger context at the current cursor position
+	 * and open/update the menu if appropriate. Shared by handleBackspace() and the
+	 * single-line paste path so an edit that is not a plain keystroke still opens
+	 * autocomplete when the text before the cursor is a slash-command or @/# trigger.
+	 */
+	private refreshAutocompleteContext(): void {
+		if (this.autocompleteState) {
+			this.updateAutocomplete();
+			return;
+		}
+		const currentLine = this.state.lines[this.state.cursorLine] || "";
+		const textBeforeCursor = currentLine.slice(0, this.state.cursorCol);
+		// Slash command context
+		if (this.isInSlashCommandContext(textBeforeCursor)) {
+			this.tryTriggerAutocomplete();
+		}
+		// Symbol-based completion context like @, #, or provider triggers
+		else if (this.autocompleteTriggerPattern.test(textBeforeCursor)) {
+			this.tryTriggerAutocomplete();
+		}
+	}
+
 	private handlePaste(pastedText: string): void {
 		this.cancelAutocomplete();
 		this.exitHistoryBrowsing();
@@ -1313,8 +1336,12 @@ export class Editor implements Component, Focusable {
 		}
 
 		if (pastedLines.length === 1) {
-			// Single line - insert atomically (do not trigger autocomplete during paste)
+			// Single line - insert atomically (avoids the per-character autocomplete
+			// storm from #1812), then re-check the trigger context once so a pasted
+			// "/" or "@" still opens autocomplete (also covers Alacritty CJK IME
+			// commits, which arrive as a bracketed paste rather than keystrokes).
 			this.insertTextAtCursorInternal(filteredText);
+			this.refreshAutocompleteContext();
 			return;
 		}
 
@@ -1442,21 +1469,7 @@ export class Editor implements Component, Focusable {
 		}
 
 		// Update or re-trigger autocomplete after backspace
-		if (this.autocompleteState) {
-			this.updateAutocomplete();
-		} else {
-			// If autocomplete was cancelled (no matches), re-trigger if we're in a completable context
-			const currentLine = this.state.lines[this.state.cursorLine] || "";
-			const textBeforeCursor = currentLine.slice(0, this.state.cursorCol);
-			// Slash command context
-			if (this.isInSlashCommandContext(textBeforeCursor)) {
-				this.tryTriggerAutocomplete();
-			}
-			// Symbol-based completion context like @, #, or provider triggers
-			else if (this.autocompleteTriggerPattern.test(textBeforeCursor)) {
-				this.tryTriggerAutocomplete();
-			}
-		}
+		this.refreshAutocompleteContext();
 	}
 
 	/**
