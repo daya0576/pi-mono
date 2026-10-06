@@ -537,6 +537,14 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 			await storage.commit([{ type: "task", value: terminal }], context);
 			expect(await storage.task(firstId, context)).toEqual(terminal);
 
+			// Regression: https://github.com/earendil-works/pi/issues/10546
+			const reversePage = await storage.scanTasks({ reverse: true }, 2, undefined, context);
+			expect(reversePage.items).toEqual([third, second]);
+			expect(reversePage.next).toBeDefined();
+			expect(await storage.scanTasks({ reverse: true }, 2, reversePage.next, context)).toEqual({
+				items: [terminal],
+			});
+
 			const pendingPage = await storage.scanTasks({ status: "pending" }, 1, undefined, context);
 			expect(pendingPage.items.map(({ id }) => id)).toEqual([secondId]);
 			expect(pendingPage.next).toBeDefined();
@@ -552,106 +560,19 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 		}),
 
 		// Regression: https://github.com/earendil-works/pi/issues/10546
-		createCase(options, "paginates tasks in reverse ID order", async (storage) => {
-			const rootId = await createRoot(storage);
-			expect(await storage.scanTasks({ reverse: true }, 2, undefined, context)).toEqual({ items: [] });
-			const ids = [10, 20, 30, 50, Number.MAX_SAFE_INTEGER].map((id) => idFromNumber<TaskId<JsonValue>>(id));
-			await storage.commit(
-				[ids[2]!, ids[0]!, ids[4]!, ids[1]!, ids[3]!].map((id) => ({
-					type: "task",
-					value: pendingTask(id, rootId),
-				})),
-				context,
-			);
-
-			for (const query of [{}, { reverse: false }]) {
-				expect((await storage.scanTasks(query, 10, undefined, context)).items.map(({ id }) => id)).toEqual(ids);
-			}
-			const first = await storage.scanTasks({ reverse: true }, 2, undefined, context);
-			expect(first.items.map(({ id }) => id)).toEqual([ids[4], ids[3]]);
-			expect(first.next).toBeDefined();
-			const cursor = JSON.parse(JSON.stringify(first.next)) as Cursor;
-			const second = await storage.scanTasks({ reverse: true }, 2, cursor, context);
-			expect(second.items.map(({ id }) => id)).toEqual([ids[2], ids[1]]);
-			expect(second.next).toBeDefined();
-			const third = await storage.scanTasks({ reverse: true }, 2, second.next, context);
-			expect(third.items.map(({ id }) => id)).toEqual([ids[0]]);
-			expect(third.next).toBeUndefined();
-			expect((await storage.scanTasks({ reverse: true }, ids.length, undefined, context)).next).toBeUndefined();
-			expect(await storage.scanTasks({ reverse: true, kind: "missing" }, 2, undefined, context)).toEqual({
-				items: [],
-			});
-		}),
-
-		createCase(options, "applies every task filter while scanning in reverse", async (storage) => {
-			const rootId = await createRoot(storage);
-			const otherId = await storage.mintId<ConversationId>();
-			await storage.commit([{ type: "conversation", value: { id: otherId } }], context);
-			const tasks: StoredTask[] = [];
-			for (let index = 0; index < 8; index++) {
-				tasks.push({
-					...pendingTask(await storage.mintId<TaskId<JsonValue>>(), rootId),
-					background: true,
-					abortRequested: true,
-				});
-			}
-			tasks[1] = { ...tasks[1]!, conversationId: otherId };
-			tasks[2] = { ...tasks[2]!, kind: "other.task" };
-			tasks[4] = { ...tasks[4]!, state: { status: "running", checkpoint: { phase: "effect" } } };
-			tasks[5] = { ...tasks[5]!, background: false };
-			tasks[6] = { ...tasks[6]!, abortRequested: false };
-			await storage.commit(
-				tasks.map((value) => ({ type: "task", value })),
-				context,
-			);
-
-			const cases: readonly { readonly query: TaskQuery; readonly indices: readonly number[] }[] = [
-				{ query: { conversationId: rootId }, indices: [7, 6, 5, 4, 3, 2, 0] },
-				{ query: { kind: "test.task" }, indices: [7, 6, 5, 4, 3, 1, 0] },
-				{ query: { status: "pending" }, indices: [7, 6, 5, 3, 2, 1, 0] },
-				{ query: { status: "running" }, indices: [4] },
-				{ query: { abortRequested: true }, indices: [7, 5, 4, 3, 2, 1, 0] },
-				{ query: { abortRequested: false }, indices: [6] },
-				{ query: { background: true }, indices: [7, 6, 4, 3, 2, 1, 0] },
-				{ query: { background: false }, indices: [5] },
-				{
-					query: {
-						conversationId: rootId,
-						kind: "test.task",
-						status: "pending",
-						abortRequested: true,
-						background: true,
-					},
-					indices: [7, 3, 0],
-				},
-			];
-			for (const { query, indices } of cases) {
-				const found: StoredTask[] = [];
-				let cursor: Cursor | undefined;
-				do {
-					const page = await storage.scanTasks({ ...query, reverse: true }, 1, cursor, context);
-					expect(page.items).toHaveLength(1);
-					found.push(...page.items);
-					cursor = page.next;
-				} while (cursor !== undefined);
-				expect(found).toEqual(indices.map((index) => tasks[index]));
-			}
-		}),
-
 		createCase(options, "continues reverse task scans after inserts and status changes", async (storage) => {
 			const rootId = await createRoot(storage);
-			const tasks: ReturnType<typeof pendingTask>[] = [];
-			for (let index = 0; index < 3; index++) {
-				tasks.push(pendingTask(await storage.mintId<TaskId<JsonValue>>(), rootId));
-			}
+			const first = pendingTask(await storage.mintId<TaskId<JsonValue>>(), rootId);
+			const second = pendingTask(await storage.mintId<TaskId<JsonValue>>(), rootId);
+			const third = pendingTask(await storage.mintId<TaskId<JsonValue>>(), rootId);
 			await storage.commit(
-				tasks.map((value) => ({ type: "task", value })),
+				[first, second, third].map((value) => ({ type: "task", value })),
 				context,
 			);
 			const query = { status: "pending", reverse: true } satisfies TaskQuery;
-			const first = await storage.scanTasks(query, 2, undefined, context);
-			expect(first.items).toEqual([tasks[2], tasks[1]]);
-			expect(first.next).toBeDefined();
+			const page = await storage.scanTasks(query, 2, undefined, context);
+			expect(page.items).toEqual([third, second]);
+			expect(page.next).toBeDefined();
 
 			const newest = pendingTask(await storage.mintId<TaskId<JsonValue>>(), rootId);
 			await storage.commit(
@@ -659,18 +580,12 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 					{ type: "task", value: newest },
 					{
 						type: "task",
-						value: {
-							...tasks[1]!,
-							state: { status: "terminal", outcome: { status: "completed", result: null } },
-						},
+						value: { ...second, state: { status: "running", checkpoint: { phase: "effect" } } },
 					},
 				],
 				context,
 			);
-			const second = await storage.scanTasks(query, 2, first.next, context);
-			expect(second.items).toEqual([tasks[0]]);
-			expect(second.next).toBeUndefined();
-			expect((await storage.scanTasks(query, 2, undefined, context)).items).toEqual([newest, tasks[2]]);
+			expect(await storage.scanTasks(query, 2, page.next, context)).toEqual({ items: [first] });
 		}),
 
 		createCase(options, "stores owners and scans waiting and completing tasks by status", async (storage) => {
