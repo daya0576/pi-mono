@@ -530,12 +530,16 @@ export class MemoryStorage implements Storage {
 		const after = cursorId(cursor);
 		const ids = query.status === undefined ? this.state.taskIds : this.state.taskIdsByStatus[query.status];
 		const backward = query.direction === "backward";
+
+		let start: number;
+		if (backward) {
+			const end = after === undefined ? ids.length : lowerBound(ids, after);
+			start = end - 1;
+		} else {
+			start = after === undefined ? 0 : upperBound(ids, after);
+		}
 		const step = backward ? -1 : 1;
-		const start = backward
-			? (after === undefined ? ids.length : lowerBound(ids, after)) - 1
-			: after === undefined
-				? 0
-				: upperBound(ids, after);
+
 		const values: StoredTask[] = [];
 		for (let index = start; index >= 0 && index < ids.length && values.length <= limit; index += step) {
 			const value = this.state.tasks.get(ids[index])!;

@@ -4305,7 +4305,7 @@ type TaskQuery = {
   readonly status?: "pending" | "running" | "waiting" | "completing" | "terminal";
   readonly abortRequested?: boolean;
   readonly background?: boolean;
-  readonly direction?: "forward" | "backward"; // default "forward"
+  readonly direction?: "forward" | "backward";
 };
 
 type SubmissionQuery = {
