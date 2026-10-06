@@ -17,6 +17,7 @@ import {
 	type SubmissionQuery,
 	type SubmissionRecord,
 	type TaskId,
+	type TaskQuery,
 	type TaskRecord,
 } from "../types.ts";
 import type { StorageConformanceAssertions, StorageConformanceCase, StorageConformanceOptions } from "./types.ts";
@@ -584,6 +585,64 @@ export function createStorageConformance(options: StorageConformanceOptions): re
 			await storage.commit([{ type: "task", value: terminal }], context);
 			expect(await scan("completing")).toEqual([]);
 			expect(await scan("terminal")).toEqual([terminal]);
+		}),
+
+		createCase(options, "scans tasks newest-first with filters and cursor pagination", async (storage) => {
+			const rootId = await createRoot(storage);
+			const otherId = await storage.mintId<ConversationId>();
+			await storage.commit([{ type: "conversation", value: { id: otherId } }], context);
+			const firstId = await storage.mintId<TaskId<JsonValue>>();
+			const secondId = await storage.mintId<TaskId<JsonValue>>();
+			const thirdId = await storage.mintId<TaskId<JsonValue>>();
+			const fourthId = await storage.mintId<TaskId<JsonValue>>();
+			const newerId = await storage.mintId<TaskId<JsonValue>>();
+			const lastId = idFromNumber<TaskId<JsonValue>>(Number.MAX_SAFE_INTEGER);
+			const { state: _state, ...third } = pendingTask(thirdId, rootId);
+			await storage.commit(
+				[
+					{ type: "task", value: pendingTask(fourthId, rootId) },
+					{ type: "task", value: pendingTask(firstId, rootId) },
+					{ type: "task", value: { ...pendingTask(secondId, otherId), kind: "test.other" } },
+					{
+						type: "task",
+						value: { ...third, state: { status: "terminal", outcome: { status: "completed", result: null } } },
+					},
+					{ type: "task", value: pendingTask(lastId, rootId) },
+				],
+				context,
+			);
+
+			const ids = async (query: TaskQuery, limit: number) => {
+				const pages: TaskId[][] = [];
+				let cursor: Cursor | undefined;
+				do {
+					const page = await storage.scanTasks(query, limit, cursor, context);
+					pages.push(page.items.map(({ id }) => id));
+					cursor = page.next === undefined ? undefined : (JSON.parse(JSON.stringify(page.next)) as Cursor);
+				} while (cursor !== undefined);
+				return pages;
+			};
+			expect(await ids({ direction: "backward" }, 2)).toEqual([[lastId, fourthId], [thirdId, secondId], [firstId]]);
+			expect(await ids({ direction: "forward" }, 10)).toEqual([[firstId, secondId, thirdId, fourthId, lastId]]);
+			expect(await ids({ conversationId: rootId, direction: "backward" }, 2)).toEqual([
+				[lastId, fourthId],
+				[thirdId, firstId],
+			]);
+			expect(await ids({ status: "pending", direction: "backward" }, 1)).toEqual([
+				[lastId],
+				[fourthId],
+				[secondId],
+				[firstId],
+			]);
+			expect(await ids({ kind: "test.other", direction: "backward" }, 10)).toEqual([[secondId]]);
+			expect(await ids({ status: "terminal", direction: "backward" }, 10)).toEqual([[thirdId]]);
+
+			// A newer task committed between pages stays above the cursor and is not returned.
+			const first = await storage.scanTasks({ direction: "backward" }, 2, undefined, context);
+			expect(first.items.map(({ id }) => id)).toEqual([lastId, fourthId]);
+			await storage.commit([{ type: "task", value: pendingTask(newerId, rootId) }], context);
+			const second = await storage.scanTasks({ direction: "backward" }, 2, first.next, context);
+			expect(second.items.map(({ id }) => id)).toEqual([thirdId, secondId]);
 		}),
 
 		createCase(

@@ -363,8 +363,11 @@ export class SqliteStorage implements Storage {
 		_context: Context,
 	): Promise<Page<StoredTask, Cursor>> {
 		this.assertOpen();
-		const clauses = ["id > ?"];
-		const params: SqliteValue[] = [cursorId(cursor) ?? -1];
+		const backward = query.direction === "backward";
+		const after = cursorId(cursor);
+		// IDs are safe integers, so without a cursor `id <= MAX_SAFE_INTEGER` admits every task.
+		const clauses = [backward ? (after === undefined ? "id <= ?" : "id < ?") : "id > ?"];
+		const params: SqliteValue[] = [after ?? (backward ? Number.MAX_SAFE_INTEGER : -1)];
 		if (query.conversationId !== undefined) {
 			clauses.push("conversation_id = ?");
 			params.push(query.conversationId);
@@ -387,7 +390,7 @@ export class SqliteStorage implements Storage {
 		}
 		params.push(limit + 1);
 		const rows = await this.db.all<JsonRow>(
-			`SELECT record FROM tasks WHERE ${clauses.join(" AND ")} ORDER BY id LIMIT ?`,
+			`SELECT record FROM tasks WHERE ${clauses.join(" AND ")} ORDER BY id ${backward ? "DESC" : "ASC"} LIMIT ?`,
 			...params,
 		);
 		return page(

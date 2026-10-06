@@ -628,6 +628,8 @@ export type TaskQuery = {
 	readonly status?: TaskState<JsonValue, JsonValue>["status"];
 	readonly abortRequested?: boolean;
 	readonly background?: boolean;
+	/** Scan order by task ID: `"forward"` (default) is oldest-first, `"backward"` is newest-first. */
+	readonly direction?: "forward" | "backward";
 };
 
 /** Optional filters for an ordered scan of submission records. */
@@ -1040,7 +1042,7 @@ export interface Storage {
 	/** Look up the latest complete record for one task. */
 	task(id: TaskId, context: Context): Promise<TaskRecord<JsonValue, JsonValue, JsonValue> | undefined>;
 
-	/** Scan task records matching every supplied filter. */
+	/** Scan task records matching every supplied filter in ID order, ascending unless `query.direction` is `"backward"`. */
 	scanTasks(
 		query: TaskQuery,
 		limit: number,
