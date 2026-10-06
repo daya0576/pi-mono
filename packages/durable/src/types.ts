@@ -621,13 +621,15 @@ export type EntryQuery = {
 	readonly maxEntryId?: EntryId;
 };
 
-/** Optional filters for an ordered scan of durable task records. */
+/** Filters and scan direction for durable task records. */
 export type TaskQuery = {
 	readonly conversationId?: ConversationId;
 	readonly kind?: string;
 	readonly status?: TaskState<JsonValue, JsonValue>["status"];
 	readonly abortRequested?: boolean;
 	readonly background?: boolean;
+	/** Scan in descending task ID order. Defaults to false (ascending). Keep the same direction when continuing a cursor. */
+	readonly reverse?: boolean;
 };
 
 /** Optional filters for an ordered scan of submission records. */
@@ -1040,7 +1042,7 @@ export interface Storage {
 	/** Look up the latest complete record for one task. */
 	task(id: TaskId, context: Context): Promise<TaskRecord<JsonValue, JsonValue, JsonValue> | undefined>;
 
-	/** Scan task records matching every supplied filter. */
+	/** Scan matching tasks in ascending ID order, or descending when `query.reverse` is true. */
 	scanTasks(
 		query: TaskQuery,
 		limit: number,

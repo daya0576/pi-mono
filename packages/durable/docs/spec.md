@@ -4305,6 +4305,7 @@ type TaskQuery = {
   readonly status?: "pending" | "running" | "waiting" | "completing" | "terminal";
   readonly abortRequested?: boolean;
   readonly background?: boolean;
+  readonly reverse?: boolean;
 };
 
 type SubmissionQuery = {
@@ -4434,7 +4435,12 @@ member. `scanDocuments()` enumerates only the incarnations alive in one exact
 scope at its selected point and may restrict one family/singleton kind. It uses
 ascending incarnation IDs. There is no ordinary open-time all-document scan.
 Task queries support conversation, kind, live/terminal status, abort mark, and
-background status.
+background status. `scanTasks()` returns matching records in ascending task ID
+order by default. With `reverse: true`, it starts at the highest matching ID and
+pages in descending ID order without first scanning all tasks. The cursor
+continues strictly beyond the last returned ID in the selected direction;
+callers must keep every filter and `reverse` unchanged when continuing it.
+Task updates do not change their position in the ID order.
 
 `document(id, at)` materializes one specific incarnation and never follows a
 replacement at the same logical address. Callers resolve an address with

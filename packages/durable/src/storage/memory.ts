@@ -529,9 +529,17 @@ export class MemoryStorage implements Storage {
 		this.assertOpen();
 		const after = cursorId(cursor);
 		const ids = query.status === undefined ? this.state.taskIds : this.state.taskIdsByStatus[query.status];
-		const start = after === undefined ? 0 : upperBound(ids, after);
+		const reverse = query.reverse ?? false;
+		const start = reverse
+			? after === undefined
+				? ids.length - 1
+				: lowerBound(ids, after) - 1
+			: after === undefined
+				? 0
+				: upperBound(ids, after);
+		const step = reverse ? -1 : 1;
 		const values: StoredTask[] = [];
-		for (let index = start; index < ids.length && values.length <= limit; index++) {
+		for (let index = start; index >= 0 && index < ids.length && values.length <= limit; index += step) {
 			const value = this.state.tasks.get(ids[index])!;
 			if (query.conversationId !== undefined && value.conversationId !== query.conversationId) continue;
 			if (query.kind !== undefined && value.kind !== query.kind) continue;
