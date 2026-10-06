@@ -4435,7 +4435,8 @@ member. `scanDocuments()` enumerates only the incarnations alive in one exact
 scope at its selected point and may restrict one family/singleton kind. It uses
 ascending incarnation IDs. There is no ordinary open-time all-document scan.
 Task queries support conversation, kind, live/terminal status, abort mark, and
-background status. `scanTasks()` defaults to ascending task IDs; `reverse: true` scans descending, and cursors require unchanged filters and direction.
+background status. `scanTasks()` defaults to ascending task IDs; `reverse: true`
+scans descending, and cursors require unchanged filters and direction.
 
 `document(id, at)` materializes one specific incarnation and never follows a
 replacement at the same logical address. Callers resolve an address with
